@@ -1,6 +1,7 @@
 from modelo.usuario import Usuario
 from modelo.moto import Moto
 from vista.sistemavista import Sistema
+import random
 
 class Controlador:
 
@@ -37,3 +38,8 @@ class Controlador:
     
     def resumen(self):
         return self.moto_model.final_dia()
+    
+    def cambiar_color(self, root):
+        """Cambia el color de fondo (botón 'Sorpresa')."""
+        colores = ["#FFC0CB", "#ADD8E6", "#90EE90", "#FFFFE0", "#D3D3D3", "#9F24E3"]
+        root.configure(bg=random.choice(colores))

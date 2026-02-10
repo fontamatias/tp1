@@ -1,27 +1,22 @@
-from peewee import SqliteDatabase, Model, CharField
+from modelo.basedatos import BaseDeDatos
 import re
-import os
+from peewee import *
 
-# Configurar la base de datos
-db = SqliteDatabase(os.path.join(os.path.dirname(__file__), "linea_produccion.db"))
-
-class UsuarioModel(Model):
-    usuario = CharField(primary_key=True)
-    password = CharField()
-    
-    class Meta:
-        database = db
-        table_name = 'usuarios'
-
-class Usuario:
+class UsuarioDistribucion(BaseDeDatos):
 
     regex_usuario = r"^[A-Za-z]{3,20}$"
     regex_password = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$"
 
     def __init__(self):
-        db.create_tables([UsuarioModel], safe=True)
-        
-############VALIDACION################
+        # DB separada para usuarios de distribución
+        super().__init__("distribucion_usuarios.db")
+        self.ejecutar("""
+            CREATE TABLE IF NOT EXISTS usuarios(
+                usuario TEXT PRIMARY KEY,
+                password TEXT
+            )
+        """)
+
     def validar_usuario(self, usuario):
         if not re.match(self.regex_usuario, usuario):
             return "Nombre inválido. Debe contener solo letras y entre 3 y 20 caracteres"
@@ -39,19 +34,13 @@ class Usuario:
                 "- Mínimo 8 caracteres"
             )
         return None
-    
-    #############DB#####################
+
     def obtener(self, usuario):
-        try:
-            user = UsuarioModel.get(UsuarioModel.usuario == usuario)
-            return (user.password,)
-        except:
-            return None
+        return self.fetchone("SELECT password FROM usuarios WHERE usuario=?", (usuario,))
 
     def crear(self, usuario, password):
-        UsuarioModel.create(usuario=usuario, password=password)
-    
-    ############LOGIN ###################
+        self.ejecutar("INSERT OR REPLACE INTO usuarios VALUES (?,?)", (usuario, password))
+
     def login(self, usuario, password):
         error = self.validar_usuario(usuario)
         if error:
@@ -62,7 +51,6 @@ class Usuario:
             return error
 
         user = self.obtener(usuario)
-
         if user and user[0] != password:
             return "Contraseña incorrecta"
 

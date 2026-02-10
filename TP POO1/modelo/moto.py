@@ -1,6 +1,27 @@
-from modelo.basedatos import BaseDeDatos
+from peewee import SqliteDatabase, Model, CharField, fn
+import os
 
-class Moto(BaseDeDatos):
+# Configurar la base de datos
+db = SqliteDatabase(os.path.join(os.path.dirname(__file__), "linea_produccion.db"))
+
+class MotoOk(Model):
+    num_moto = CharField(primary_key=True)
+    num_motor = CharField()
+    
+    class Meta:
+        database = db
+        table_name = 'motos_ok'
+
+class MotoNoOk(Model):
+    num_moto = CharField(primary_key=True)
+    num_motor = CharField()
+    defecto = CharField()
+    
+    class Meta:
+        database = db
+        table_name = 'motos_no_ok'
+
+class Moto:
 
     defectos = [
         "Defectos pieza origen",
@@ -9,90 +30,60 @@ class Moto(BaseDeDatos):
     ]
     
     def __init__(self):
-        super().__init__("linea_produccion.db")
+        db.create_tables([MotoOk, MotoNoOk], safe=True)
 
-        self.ejecutar("""
-                      CREATE TABLE IF NOT EXISTS motos_ok(
-                      num_moto TEXT PRIMARY KEY,
-                      num_motor TEXT
-                      )
-                      """)
-        
-        self.ejecutar("""
-                      CREATE TABLE IF NOT EXISTS motos_no_ok(
-                      num_moto TEXT PRIMARY KEY,
-                      num_motor TEXT,
-                      defecto TEXT
-                      )
-                      """)
-        
     def alta(self, moto, motor):
         if not moto or not motor:
+            return False
+        
+        try:
+            MotoOk.replace(num_moto=moto, num_motor=motor).execute()
+            MotoNoOk.delete().where(MotoNoOk.num_moto == moto).execute()
+            return True
+        except:
+            return False
+
+    def baja(self, moto, motor, defecto):
+        try:
+            prueba = int(defecto) - 1
+            if prueba < 0 or prueba >= len(self.defectos):
                 return False
             
-        self.ejecutar(
-                "INSERT OR REPLACE INTO motos_ok VALUES (?,?)",
-                (moto, motor)
-            )
-        self.ejecutar(
-                "DELETE FROM motos_no_ok WHERE num_moto=?",
-                (moto,)
-            )
-        return True
-
-    def baja (self, moto, motor, defecto):
-        try:
-            prueba = int(defecto)-1
-            if prueba<0 or prueba>=len(self.defectos):
-                 return False
-            
             defecto = self.defectos[prueba]
-
-            self.ejecutar(
-                 "INSERT OR REPLACE INTO motos_no_ok VALUES (?,?,?)",
-                 (moto,motor,defecto)
-            )
+            MotoNoOk.replace(num_moto=moto, num_motor=motor, defecto=defecto).execute()
             return True
         except ValueError:
-             return False
+            return False
 
     def mover_a_ok(self, moto):
-         fila = self.fetchone(
-              "SELECT num_moto, num_moto FROM motos_no_ok WHERE num_moto=?",
-              (moto,)
-         )
-         if fila:
-              self.ejecutar("DELETE FROM motos_no_ok WHERE num_moto=?",(moto,))
-              self.ejecutar("INSERT OR REPLACE INTO motos_ok VALUES (?,?)",fila)
-              return True
-         return False
+        try:
+            moto_no_ok = MotoNoOk.get(MotoNoOk.num_moto == moto)
+            MotoNoOk.delete().where(MotoNoOk.num_moto == moto).execute()
+            MotoOk.replace(num_moto=moto_no_ok.num_moto, num_motor=moto_no_ok.num_motor).execute()
+            return True
+        except:
+            return False
     
-    def buscar(self,moto):
-         if self.fetchone("SELECT 1 FROM motos_ok WHERE num_moto=?",(moto,)):
-              return "Moto OK"
-         
-         res=self.fetchone(
-              "SELECT defecto FROM motos_no_ok WHERE num_moto=?",
-              (moto,)
-         )
-         if res:
-              return f"moto no encontrada"
+    def buscar(self, moto):
+        try:
+            MotoOk.get(MotoOk.num_moto == moto)
+            return "Moto OK"
+        except:
+            pass
+        
+        try:
+            moto_no_ok = MotoNoOk.get(MotoNoOk.num_moto == moto)
+            return f"Moto NO OK - Defecto: {moto_no_ok.defecto}"
+        except:
+            return "Moto no encontrada"
     
     def listar_ok(self):
-         return self.fetchall("SELECT * FROM motos_ok")
+        return [(m.num_moto, m.num_motor) for m in MotoOk.select()]
     
     def listar_no_ok(self):
-         return self.fetchall("SELECT * FROM motos_no_ok")
+        return [(m.num_moto, m.num_motor, m.defecto) for m in MotoNoOk.select()]
     
     def final_dia(self):
-         cursor=self.ejecutar(
-              "SELECT COUNT(*)FROM motos_ok"
-         )
-         contador_ok=cursor.fetchone()[0]
-
-         cursor=self.ejecutar(
-              "SELECT COUNT(*)FROM motos_no_ok"
-         )
-         contador_no_ok=cursor.fetchone()[0]
-
-         return contador_ok, contador_no_ok
+        contador_ok = MotoOk.select(fn.COUNT('*')).scalar()
+        contador_no_ok = MotoNoOk.select(fn.COUNT('*')).scalar()
+        return contador_ok, contador_no_ok
